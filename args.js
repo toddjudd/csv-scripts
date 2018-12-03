@@ -11,6 +11,12 @@ let db02 = vars.db02
 let csvDir = vars.csvDir
 const outDir = path.join(process.cwd(), 'data')
 let removeDups = (names) => names.filter((v,i) => names.indexOf(v) === i)
+function removeDuplicates(myArr, prop) {
+  return myArr.filter((obj, pos, arr) => {
+    return arr.map(mapObj => mapObj[prop]).indexOf(obj[prop]) === pos;
+  });
+}
+var i = 0
 
 args
   .option('file', 'Single file time in Archive DIR to check against LinxAPI', 'false')
@@ -51,28 +57,67 @@ csvFiles = fs.readdirSync(csvDir).map(file => {
     stats: fs.statSync(path.join(csvDir, file))
   }
 }).filter(file => {
-  // console.log(file)
   let valid = true
-  // console.log(`valid ${valid}`)
-  // console.log(`flags.f ${flags.f}`)
   if (flags.f) {
-    // console.log(`flags.f == file.filename ${flags.f == file.filename}`)
     if (flags.f != file.filename) {valid = false}
   } 
-  // console.log(`valid ${valid}`)
-  // console.log(`flags.s ${flags.s}`)
   if (flags.s) {
-    // console.log(`moment(flags.s).isSameOrBefore(file.stats.ctime) ${moment(flags.s).isSameOrBefore(file.stats.ctime)}`)
     if (!moment(flags.s).isSameOrBefore(file.stats.ctime)) {valid = false}
   } 
-  // console.log(`valid ${valid}`)
-  // console.log(`flags.e ${flags.e}`)
   if (flags.e) {
-    // console.log(`moment(flags.e).isSameOrAfter(file.stats.ctime) ${moment(flags.e).isSameOrAfter(file.stats.ctime)}`)
     if (!moment(flags.e).isSameOrAfter(file.stats.ctime)) {valid = false}
   } 
-  // console.log(`valid ${valid}`)
   return valid
 })
 
-console.log(csvFiles)
+async function getRecords() {
+  try {
+    await sql.connect(db02)
+    const res = await sql.query`select orderId from linxapi.dbo.order_import_header where ownerid = 'cokem' and importstatus <> 'x' and ownerid = 'cokem'`
+    sql.close()
+    console.log(res)
+    let records = res.recordset.map(rec => {
+      return rec.orderId
+    })
+    compareFilesNOrders(records, csvFiles)
+  } catch (err) {
+    console.log(err)
+    process.end()
+  }
+} 
+getRecords()
+
+function compareFilesNOrders(rec, files) {
+  filesWithOrdersNotInRec = []
+  files.forEach(file => {
+    fs.createReadStream(file.filepath)
+      .pipe(csv())
+      .on('headers', (h) => {
+        // console.log(h)
+      })
+      .on('data', (data) => {
+        row = JSON.parse(JSON.stringify(data))
+        if (rec.indexOf(row.SCSCD)<0) {
+          file.missingOrders[
+            row.SCSCD
+          ]
+          filesWithOrdersNotInRec.push(file)
+        }
+      })
+      .on('end', function() {
+        i++
+        handleStreamEnd(i)
+      })
+  })
+}
+
+function handleStreamEnd(i) {
+    if (csvFiles.length == i) {
+    console.log("stream done")
+    console.log(filesWithOrdersNotInRec)
+    return true
+  } else {
+    console.log('stream in progress')
+    return false
+  }
+}
