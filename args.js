@@ -7,7 +7,7 @@ const path = require('path')
 const sql = require('mssql')
 const vars = require('./vars')
 
-let db02 = vars.db02
+let nidavellir = vars.nidavellir
 let csvDir = vars.csvDir
 const outDir = path.join(process.cwd(), 'data')
 let removeDups = (names) => names.filter((v,i) => names.indexOf(v) === i)
@@ -72,13 +72,14 @@ csvFiles = fs.readdirSync(csvDir).map(file => {
 
 async function getRecords() {
   try {
-    await sql.connect(db02)
+    await sql.connect(nidavellir)
     const res = await sql.query`select orderId from linxapi.dbo.order_import_header where ownerid = 'cokem' and importstatus <> 'x' and ownerid = 'cokem'`
     sql.close()
-    console.log(res)
     let records = res.recordset.map(rec => {
       return rec.orderId
     })
+    console.log(records)
+    console.log(csvFiles)
     compareFilesNOrders(records, csvFiles)
   } catch (err) {
     console.log(err)
@@ -98,9 +99,9 @@ function compareFilesNOrders(rec, files) {
       .on('data', (data) => {
         row = JSON.parse(JSON.stringify(data))
         if (rec.indexOf(row.SCSCD)<0) {
-          file.missingOrders[
-            row.SCSCD
-          ]
+          file.missingOrders =[]
+          file.missingOrders.push(row.SCSCD)
+            // row.SCSCD
           filesWithOrdersNotInRec.push(file)
         }
       })
@@ -114,6 +115,7 @@ function compareFilesNOrders(rec, files) {
 function handleStreamEnd(i) {
     if (csvFiles.length == i) {
     console.log("stream done")
+    console.log("filesWithOrdersNotInRec")
     console.log(filesWithOrdersNotInRec)
     return true
   } else {
